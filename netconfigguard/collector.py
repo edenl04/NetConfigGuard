@@ -10,6 +10,16 @@ from netconfigguard.topology import normalize_neighbor
 
 
 CollectorFn = Callable[[Device, Credentials, int], DeviceCollectionResult]
+ENABLE_SECRET_REQUIRED = "enable_secret_required"
+ENABLE_AUTHENTICATION_FAILED = "enable_authentication_failed"
+
+
+class EnableSecretRequired(RuntimeError):
+    pass
+
+
+class EnableAuthenticationFailed(RuntimeError):
+    pass
 
 
 def collect_device(device: Device, credentials: Credentials, retries: int = 3) -> DeviceCollectionResult:
@@ -18,6 +28,15 @@ def collect_device(device: Device, credentials: Credentials, retries: int = 3) -
     for attempt in range(1, retries + 1):
         try:
             return _collect_device_once(device, credentials, attempt - 1)
+        except (EnableSecretRequired, EnableAuthenticationFailed) as exc:
+            return DeviceCollectionResult(
+                device=device,
+                success=False,
+                error_type=_classify_error(exc.__class__.__name__, str(exc)),
+                error=str(exc),
+                retries=attempt - 1,
+                collected_at=datetime.now(timezone.utc),
+            )
         except Exception as exc:  # Netmiko imports are optional until runtime.
             last_error_type = exc.__class__.__name__
             last_error = str(exc)
@@ -68,8 +87,7 @@ def _collect_device_once(device: Device, credentials: Credentials, retry_count: 
 
     try:
         with ConnectHandler(**connection) as net_connect:
-            if credentials.secret:
-                net_connect.enable()
+            _ensure_privileged_mode(net_connect, credentials)
             running_config = net_connect.send_command("show running-config", read_timeout=max(device.timeout, 60))
             neighbors, status, protocol = _collect_neighbors(net_connect)
             return DeviceCollectionResult(
@@ -84,6 +102,19 @@ def _collect_device_once(device: Device, credentials: Credentials, retry_count: 
             )
     except (NetmikoTimeoutException, NetmikoAuthenticationException, ReadTimeout, ReadException, NetmikoBaseException):
         raise
+
+
+def _ensure_privileged_mode(net_connect: Any, credentials: Credentials) -> None:
+    if net_connect.check_enable_mode():
+        return
+    if not credentials.secret:
+        raise EnableSecretRequired("Enable secret required: set NETOPS_SECRET or use a privilege 15 account.")
+    try:
+        net_connect.enable()
+    except Exception as exc:
+        raise EnableAuthenticationFailed("Failed to enter enable mode with NETOPS_SECRET.") from exc
+    if not net_connect.check_enable_mode():
+        raise EnableAuthenticationFailed("NETOPS_SECRET was provided but privileged EXEC mode was not reached.")
 
 
 def _collect_neighbors(net_connect: Any) -> tuple[list[Neighbor], str, str]:
@@ -108,6 +139,10 @@ def _parse_textfsm_neighbors(output: Any, protocol: str) -> list[Neighbor]:
 
 def _classify_error(error_type: str, error: str) -> str:
     text = f"{error_type} {error}".lower()
+    if ENABLE_SECRET_REQUIRED in text or "enable secret required" in text:
+        return ENABLE_SECRET_REQUIRED
+    if ENABLE_AUTHENTICATION_FAILED in text or "failed to enter enable mode" in text:
+        return ENABLE_AUTHENTICATION_FAILED
     if "auth" in text:
         return "ssh_authentication_failed"
     if "timeout" in text or "timed" in text:

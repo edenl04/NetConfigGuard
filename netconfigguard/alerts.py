@@ -11,13 +11,14 @@ def build_alerts(report: dict[str, Any]) -> list[dict[str, Any]]:
     alerts: list[dict[str, Any]] = []
     for device in report.get("devices", []):
         if device.get("collection_status") == "unreachable":
+            reason = str(device.get("reason", ""))
             alerts.append(
                 {
                     "severity": device.get("severity", "high"),
                     "category": "collection",
                     "device": device.get("device", ""),
-                    "message": f"Device {device.get('device', '')} is unreachable",
-                    "reason": device.get("reason", ""),
+                    "message": _collection_message(str(device.get("device", "")), reason),
+                    "reason": reason,
                     "run_id": report.get("run_id", ""),
                 }
             )
@@ -64,6 +65,14 @@ def build_alerts(report: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return alerts
+
+
+def _collection_message(device_name: str, reason: str) -> str:
+    if reason == "enable_secret_required":
+        return f"Device {device_name} requires privileged EXEC mode. Configure NETOPS_SECRET or use a privilege 15 account."
+    if reason == "enable_authentication_failed":
+        return f"Device {device_name} rejected NETOPS_SECRET while entering privileged EXEC mode."
+    return f"Device {device_name} is unreachable"
 
 
 def write_alerts(latest_path: Path, log_path: Path, report: dict[str, Any]) -> list[dict[str, Any]]:
