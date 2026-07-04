@@ -1,0 +1,31 @@
+[project]
+name = "netconfigguard"
+version = "0.1.0"
+description = "Cisco configuration backup, drift detection, and topology monitoring"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "netmiko>=4.4.0",
+    "ntc-templates>=7.0.0",
+    "pyyaml>=6.0.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+]
+
+[project.scripts]
+netconfigguard = "netconfigguard.cli:main"
+gitops = "netconfigguard.cli:main"
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+include = ["netconfigguard*"]
+

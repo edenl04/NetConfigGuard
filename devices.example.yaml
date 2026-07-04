@@ -1,0 +1,23 @@
+﻿devices:
+  - name: core-sw01
+    host: 10.0.0.10
+    device_type: cisco_ios
+    role: core_switch
+    site: hq
+    port: 22
+    enabled: true
+    tags:
+      - core
+      - l3
+
+  - name: access-sw01
+    host: 10.0.1.10
+    device_type: cisco_ios
+    role: access_switch
+    site: hq
+    port: 22
+    enabled: true
+    tags:
+      - access
+      - l2
+
